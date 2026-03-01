@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Intrinsic Motivation Simulator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #0c0e18;
+    --surface:  #131629;
+    --card:     #1a1e32;
+    --border:   #252a45;
+    --c1:       #f7c948;  /* High mon + Autonomy  */
+    --c2:       #4fd1a5;  /* Low mon  + Autonomy  */
+    --c3:       #f06565;  /* High mon + No auto   */
+    --c4:       #7b9cef;  /* Low mon  + No auto   */
+    --text:     #e8eaf6;
+    --muted:    #6b7099;
+    --accent:   #f7c948;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Lato', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+
+  .wrapper { position: relative; z-index: 1; max-width: 1160px; margin: 0 auto; padding: 32px 24px 60px; }
+
+  /* ── Header ── */
+  header { text-align: center; margin-bottom: 40px; }
+  header .eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 12px;
+  }
+  header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(26px, 4vw, 42px);
+    line-height: 1.15; color: var(--text); margin-bottom: 10px;
+  }
+  header h1 em { color: var(--accent); font-style: italic; }
+  header p {
+    font-size: 14px; color: var(--muted); max-width: 560px; margin: 0 auto;
+    line-height: 1.7;
+  }
+
+  /* ── Layout ── */
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 24px; align-items: start; }
+
+  /* ── Control Panel ── */
+  .controls {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    position: sticky; top: 20px;
+  }
+  .controls h2 {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 20px;
+  }
+
+  /* Parameter sliders */
+  .param-group { margin-bottom: 22px; }
+  .param-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .param-label span:first-child {
+    font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text);
+  }
+  .param-value {
+    font-family: 'DM Mono', monospace; font-size: 13px;
+    color: var(--accent); font-weight: 500;
+    background: rgba(247,201,72,0.1);
+    padding: 2px 8px; border-radius: 4px;
+  }
+  .param-desc { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+
+  input[type=range] {
+    -webkit-appearance: none; width: 100%; height: 4px;
+    background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--bg); cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* Monitoring level selector */
+  .level-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+  .level-btn {
+    padding: 10px 6px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-family: 'DM Mono', monospace;
+    font-size: 11px; cursor: pointer; text-align: center; transition: all 0.2s;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .level-btn.active-high { background: rgba(240,101,101,0.15); border-color: var(--c3); color: var(--c3); }
+  .level-btn.active-low  { background: rgba(79,209,165,0.15);  border-color: var(--c2); color: var(--c2); }
+  .level-btn:not(.active-high):not(.active-low):hover { border-color: var(--muted); color: var(--text); }
+
+  /* Formula box */
+  .formula-box {
+    background: rgba(247,201,72,0.05);
+    border: 1px solid rgba(247,201,72,0.2);
+    border-radius: 10px; padding: 14px;
+    font-family: 'DM Mono', monospace; font-size: 12px;
+    color: var(--text); line-height: 1.9;
+  }
+  .formula-box .f-title { font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+
+  /* ── Right panel ── */
+  .right { display: flex; flex-direction: column; gap: 20px; }
+
+  /* Condition cards */
+  .conditions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cond-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 20px;
+    position: relative; overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .cond-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .cond-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  }
+  .cond-card.c1::before { background: var(--c1); }
+  .cond-card.c2::before { background: var(--c2); }
+  .cond-card.c3::before { background: var(--c3); }
+  .cond-card.c4::before { background: var(--c4); }
+
+  .cond-label {
+    font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  .c1 .cond-label { color: var(--c1); }
+  .c2 .cond-label { color: var(--c2); }
+  .c3 .cond-label { color: var(--c3); }
+  .c4 .cond-label { color: var(--c4); }
+
+  .cond-title { font-family: 'DM Serif Display', serif; font-size: 15px; color: var(--text); margin-bottom: 10px; }
+  .cond-params { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+
+  .k-display {
+    display: flex; align-items: baseline; gap: 6px;
+    font-family: 'DM Serif Display', serif;
+  }
+  .k-display .k-val {
+    font-size: 32px; font-weight: 400; transition: all 0.4s;
+  }
+  .c1 .k-val { color: var(--c1); }
+  .c2 .k-val { color: var(--c2); }
+  .c3 .k-val { color: var(--c3); }
+  .c4 .k-val { color: var(--c4); }
+  .k-display .k-label { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; }
+
+  .k-bar-wrap { margin-top: 10px; background: var(--border); border-radius: 3px; height: 5px; }
+  .k-bar { height: 100%; border-radius: 3px; transition: width 0.5s cubic-bezier(.4,0,.2,1); }
+  .c1 .k-bar { background: var(--c1); }
+  .c2 .k-bar { background: var(--c2); }
+  .c3 .k-bar { background: var(--c3); }
+  .c4 .k-bar { background: var(--c4); }
+
+  .dk-badge {
+    display: inline-block; margin-top: 8px;
+    font-family: 'DM Mono', monospace; font-size: 10px; padding: 3px 8px;
+    border-radius: 20px; letter-spacing: 0.5px;
+  }
+
+  /* Chart panel */
+  .chart-panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px;
+  }
+  .chart-header {
+    display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;
+  }
+  .chart-header h3 { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--text); }
+  .chart-header p { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .chart-toggle { display: flex; gap: 8px; }
+  .toggle-btn {
+    font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--muted); cursor: pointer; transition: all 0.2s;
+  }
+  .toggle-btn.active { background: rgba(247,201,72,0.12); border-color: var(--accent); color: var(--accent); }
+
+  .chart-wrap { position: relative; height: 380px; }
+
+  /* Insight strip */
+  .insight {
+    background: linear-gradient(135deg, rgba(247,201,72,0.07), rgba(79,209,165,0.05));
+    border: 1px solid rgba(247,201,72,0.15);
+    border-radius: 12px; padding: 16px 20px;
+    font-size: 13px; color: var(--text); line-height: 1.7;
+  }
+  .insight strong { color: var(--accent); }
+  .insight-icon { font-size: 16px; margin-right: 6px; }
+
+  /* Responsive */
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .controls { position: static; }
+    .conditions-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 520px) { .conditions-grid { grid-template-columns: 1fr; } }
+
+  /* Animate in */
+  @keyframes fadeUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+  .cond-card { animation: fadeUp 0.5s ease both; }
+  .cond-card:nth-child(1) { animation-delay: 0.05s; }
+  .cond-card:nth-child(2) { animation-delay: 0.12s; }
+  .cond-card:nth-child(3) { animation-delay: 0.19s; }
+  .cond-card:nth-child(4) { animation-delay: 0.26s; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="eyebrow">Dickinson-Style Shirking Model</div>
+    <h1>Intrinsic Motivation <em>k(m, a)</em> Simulator</h1>
+    <p>Explore how monitoring intensity and autonomy jointly shape intrinsic motivation across four experimental treatment conditions.</p>
+  </header>
+
+  <div class="layout">
+
+    <!-- ── LEFT: Controls ── -->
+    <aside class="controls">
+      <h2>⚙ Parameters</h2>
+
+      <!-- k0 -->
+      <div class="param-group">
+        <div class="param-label">
+          <span>k₀ — Baseline motivation</span>
+          <span class="param-value" id="val-k0">0.50</span>
+        </div>
+        <div class="param-desc">Intrinsic motivation when m=0, a=0</div>
+        <input type="range" id="sl-k0" min="0" max="2" step="0.01" value="0.5"/>
+      </div>
+
+      <!-- alpha -->
+      <div class="param-group">
+        <div class="param-label">
+          <span>α — Autonomy boost</span>
+          <span class="param-value" id="val-alpha">0.40</span>
+        </div>
+        <div class="param-desc">Direct lift to k when autonomy a=1</div>
+        <input type="range" id="sl-alpha" min="0" max="1.5" step="0.01" value="0.4"/>
+      </div>
+
+      <!-- beta1 -->
+      <div class="param-group">
+        <div class="param-label">
+          <span>β₁ — Monitoring lift</span>
+          <span class="param-value" id="val-b1">0.30</span>
+        </div>
+        <div class="param-desc">Positive direct effect of monitoring on k</div>
+        <input type="range" id="sl-b1" min="0" max="1" step="0.01" value="0.3"/>
+      </div>
+
+      <!-- beta2 -->
+      <div class="param-group">
+        <div class="param-label">
+          <span>β₂ — Crowding-out</span>
+          <span class="param-value" id="val-b2">0.60</span>
+        </div>
+        <div class="param-desc">Strength of monitoring's quadratic crowding-out</div>
+        <input type="range" id="sl-b2" min="0" max="2" step="0.01" value="0.6"/>
+      </div>
+
+      <hr class="divider"/>
+
+      <!-- m high / m low selector -->
+      <div class="param-group">
+        <div class="param-label" style="margin-bottom:10px;">
+          <span>m_high — High monitoring</span>
+          <span class="param-value" id="val-mh">0.80</span>
+        </div>
+        <input type="range" id="sl-mh" min="0.5" max="1" step="0.01" value="0.8"/>
+      </div>
+      <div class="param-group">
+        <div class="param-label">
+          <span>m_low — Low monitoring</span>
+          <span class="param-value" id="val-ml">0.20</span>
+        </div>
+        <input type="range" id="sl-ml" min="0" max="0.49" step="0.01" value="0.2"/>
+      </div>
+
+      <hr class="divider"/>
+
+      <!-- Formula -->
+      <div class="formula-box">
+        <div class="f-title">Model equation</div>
+        k(m, a) = k₀ + α·a<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ β₁·m<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;− β₂·(1−a)·m²<br/><br/>
+        <span style="color:var(--muted)">a ∈ {0, 1} &nbsp;|&nbsp; m ∈ [0, 1]</span>
+      </div>
+    </aside>
+
+    <!-- ── RIGHT: Outputs ── -->
+    <div class="right">
+
+      <!-- Four condition cards -->
+      <div class="conditions-grid">
+        <!-- C1: High m, a=1 -->
+        <div class="cond-card c1">
+          <div class="cond-label">Condition 1</div>
+          <div class="cond-title">High Monitoring<br/>+ Autonomy</div>
+          <div class="cond-params" id="params-c1">m=0.80 · a=1</div>
+          <div class="k-display">
+            <span class="k-val" id="k-c1">—</span>
+            <span class="k-label">k(m,a)</span>
+          </div>
+          <div class="k-bar-wrap"><div class="k-bar" id="bar-c1" style="width:0%"></div></div>
+          <div id="badge-c1" class="dk-badge"></div>
+        </div>
+
+        <!-- C2: Low m, a=1 -->
+        <div class="cond-card c2">
+          <div class="cond-label">Condition 2</div>
+          <div class="cond-title">Low Monitoring<br/>+ Autonomy</div>
+          <div class="cond-params" id="params-c2">m=0.20 · a=1</div>
+          <div class="k-display">
+            <span class="k-val" id="k-c2">—</span>
+            <span class="k-label">k(m,a)</span>
+          </div>
+          <div class="k-bar-wrap"><div class="k-bar" id="bar-c2" style="width:0%"></div></div>
+          <div id="badge-c2" class="dk-badge"></div>
+        </div>
+
+        <!-- C3: High m, a=0 -->
+        <div class="cond-card c3">
+          <div class="cond-label">Condition 3</div>
+          <div class="cond-title">High Monitoring<br/>No Autonomy</div>
+          <div class="cond-params" id="params-c3">m=0.80 · a=0</div>
+          <div class="k-display">
+            <span class="k-val" id="k-c3">—</span>
+            <span class="k-label">k(m,a)</span>
+          </div>
+          <div class="k-bar-wrap"><div class="k-bar" id="bar-c3" style="width:0%"></div></div>
+          <div id="badge-c3" class="dk-badge"></div>
+        </div>
+
+        <!-- C4: Low m, a=0 -->
+        <div class="cond-card c4">
+          <div class="cond-label">Condition 4</div>
+          <div class="cond-title">Low Monitoring<br/>No Autonomy</div>
+          <div class="cond-params" id="params-c4">m=0.20 · a=0</div>
+          <div class="k-display">
+            <span class="k-val" id="k-c4">—</span>
+            <span class="k-label">k(m,a)</span>
+          </div>
+          <div class="k-bar-wrap"><div class="k-bar" id="bar-c4" style="width:0%"></div></div>
+          <div id="badge-c4" class="dk-badge"></div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div>
+            <h3>Intrinsic Motivation k(m, a)  vs  Monitoring Intensity m</h3>
+            <p>Full curves for a=1 and a=0 across m ∈ [0,1]. Markers show where each treatment condition lands.</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--muted);">m* threshold shown as ⟂</span>
+          </div>
+        </div>
+        <div class="chart-wrap" style="height:380px;">
+          <canvas id="mainChart"></canvas>
+        </div>
+        <!-- axis labels -->
+        <div style="display:flex; justify-content:space-between; margin-top:6px; padding:0 8px;">
+          <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--muted);">m = 0 (no monitoring)</span>
+          <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--accent); font-weight:500;">← X axis: Monitoring probability m →</span>
+          <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--muted);">m = 1 (always monitored)</span>
+        </div>
+      </div>
+
+      <!-- Insight -->
+      <div class="insight" id="insight-box">
+        <span class="insight-icon">💡</span>
+        <strong>Economic insight</strong> will appear here as you adjust parameters.
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Model ──────────────────────────────────────
+function kFn(m, a, k0, alpha, b1, b2) {
+  return k0 + alpha * a + b1 * m - b2 * (1 - a) * m * m;
+}
+function mStar(a, b1, b2) {
+  const d = 2 * b2 * (1 - a);
+  return d > 0 ? b1 / d : Infinity;
+}
+
+let myChart = null;
+
+function getParams() {
+  return {
+    k0:    +document.getElementById('sl-k0').value,
+    alpha: +document.getElementById('sl-alpha').value,
+    b1:    +document.getElementById('sl-b1').value,
+    b2:    +document.getElementById('sl-b2').value,
+    mh:    +document.getElementById('sl-mh').value,
+    ml:    +document.getElementById('sl-ml').value,
+  };
+}
+
+function update() {
+  const p = getParams();
+
+  // Slider value labels
+  document.getElementById('val-k0').textContent    = p.k0.toFixed(2);
+  document.getElementById('val-alpha').textContent = p.alpha.toFixed(2);
+  document.getElementById('val-b1').textContent    = p.b1.toFixed(2);
+  document.getElementById('val-b2').textContent    = p.b2.toFixed(2);
+  document.getElementById('val-mh').textContent    = p.mh.toFixed(2);
+  document.getElementById('val-ml').textContent    = p.ml.toFixed(2);
+
+  // Four condition k values: [C1, C2, C3, C4]
+  const kVals = [
+    kFn(p.mh, 1, p.k0, p.alpha, p.b1, p.b2),  // C1: Hi m, a=1
+    kFn(p.ml, 1, p.k0, p.alpha, p.b1, p.b2),  // C2: Lo m, a=1
+    kFn(p.mh, 0, p.k0, p.alpha, p.b1, p.b2),  // C3: Hi m, a=0
+    kFn(p.ml, 0, p.k0, p.alpha, p.b1, p.b2),  // C4: Lo m, a=0
+  ];
+
+  const mVals = [p.mh, p.ml, p.mh, p.ml];
+  const aVals = [1, 1, 0, 0];
+  const ids   = ['c1','c2','c3','c4'];
+  const maxK  = Math.max(...kVals.map(Math.abs), 0.01);
+
+  ids.forEach((id, i) => {
+    const k = kVals[i];
+    const m = mVals[i];
+    const a = aVals[i];
+    document.getElementById('params-'+id).textContent = `m = ${m.toFixed(2)}  ·  a = ${a}`;
+    document.getElementById('k-'+id).textContent = k.toFixed(3);
+    const pct = Math.max(0, Math.min(100, (k / (maxK * 1.1)) * 100));
+    document.getElementById('bar-'+id).style.width = pct + '%';
+    const dkdm = p.b1 - 2 * p.b2 * (1 - a) * m;
+    const badge = document.getElementById('badge-'+id);
+    if (a === 1) {
+      badge.textContent = '∂k/∂m = ' + dkdm.toFixed(3) + '  (autonomy shields crowding)';
+      badge.style.background = 'rgba(79,209,165,0.12)';
+      badge.style.color = '#4fd1a5';
+    } else if (dkdm >= 0) {
+      badge.textContent = '∂k/∂m = ' + dkdm.toFixed(3) + '  ▲ monitoring still helps';
+      badge.style.background = 'rgba(247,201,72,0.12)';
+      badge.style.color = '#f7c948';
+    } else {
+      badge.textContent = '∂k/∂m = ' + dkdm.toFixed(3) + '  ▼ crowding-out active';
+      badge.style.background = 'rgba(240,101,101,0.12)';
+      badge.style.color = '#f06565';
+    }
+  });
+
+  renderInsight(p, kVals);
+  renderChart(p, kVals);
+}
+
+function renderInsight(p, kVals) {
+  const [k1, k2, k3, k4] = kVals;
+  const ms0 = mStar(0, p.b1, p.b2);
+  const ms1 = mStar(1, p.b1, p.b2);
+  const autoGain_hi = (k1 - k3).toFixed(3);
+  let txt = `<span class="insight-icon">💡</span> `;
+  if (k1 > k3) {
+    txt += `<strong>Complementarity confirmed</strong>: At high monitoring, granting autonomy raises k by <strong style="color:var(--c1)">${autoGain_hi}</strong> — autonomy offsets crowding-out. `;
+  } else {
+    txt += `<strong>No complementarity</strong> at current parameters — autonomy does not compensate for high monitoring. `;
+  }
+  txt += ms0 <= 1
+    ? `Without autonomy, crowding-out begins at <strong style="color:var(--c3)">m* = ${ms0.toFixed(2)}</strong>. `
+    : `Without autonomy, monitoring never fully crowds out motivation at these parameters. `;
+  txt += ms1 > 1
+    ? `With full autonomy, m*(a=1) > 1, so <strong style="color:var(--c2)">crowding-out never triggers</strong>. `
+    : `Even with autonomy, crowding-out can occur above m* = ${ms1.toFixed(2)}. `;
+  const ranking = [{label:'C1',val:k1},{label:'C2',val:k2},{label:'C3',val:k3},{label:'C4',val:k4}]
+    .sort((a,b) => b.val - a.val);
+  txt += `<br/><strong>Ranking</strong>: ${ranking.map(r=>r.label+'='+r.val.toFixed(2)).join(' > ')}`;
+  document.getElementById('insight-box').innerHTML = txt;
+}
+
+// ── Custom plugin: vertical drop lines + labels on the chart ──
+const dropLinesPlugin = {
+  id: 'dropLines',
+  afterDraw(chart) {
+    const ctx = chart.ctx;
+    const xAxis = chart.scales.x;
+    const yAxis = chart.scales.y;
+
+    const conditions = chart._conditionData;
+    if (!conditions) return;
+
+    conditions.forEach(c => {
+      const xPx = xAxis.getPixelForValue(c.x);
+      const yPx = yAxis.getPixelForValue(c.y);
+      const yZero = yAxis.getPixelForValue(yAxis.min);
+
+      // Vertical dashed drop line
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = c.color + '66';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(xPx, yPx);
+      ctx.lineTo(xPx, yZero);
+      ctx.stroke();
+
+      // Horizontal dashed line to y-axis
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xAxis.left, yPx);
+      ctx.lineTo(xPx, yPx);
+      ctx.stroke();
+      ctx.restore();
+
+      // Label above the dot
+      ctx.save();
+      ctx.font = '600 11px "DM Mono", monospace';
+      ctx.fillStyle = c.color;
+      ctx.textAlign = 'center';
+      ctx.fillText(c.label, xPx, yPx - 14);
+      ctx.font = '10px "DM Mono", monospace';
+      ctx.fillStyle = c.color + 'bb';
+      ctx.fillText(`k=${c.y.toFixed(2)}`, xPx, yPx - 3);
+      ctx.restore();
+    });
+
+    // Draw m* threshold lines
+    const mStarData = chart._mStarData;
+    if (!mStarData) return;
+    mStarData.forEach(ms => {
+      if (ms.val > 1 || ms.val <= 0) return;
+      const xPx = xAxis.getPixelForValue(ms.val);
+      ctx.save();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = ms.color + '55';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xPx, yAxis.top);
+      ctx.lineTo(xPx, yAxis.bottom);
+      ctx.stroke();
+      ctx.font = '9px "DM Mono", monospace';
+      ctx.fillStyle = ms.color + '99';
+      ctx.textAlign = 'center';
+      ctx.fillText(ms.label, xPx, yAxis.top + 10);
+      ctx.restore();
+    });
+  }
+};
+
+Chart.register(dropLinesPlugin);
+
+function renderChart(p, kVals) {
+  const N = 300;
+  const M = Array.from({length: N + 1}, (_, i) => i / N);
+
+  // Full continuous curves
+  const curve_a1 = M.map(m => ({ x: m, y: kFn(m, 1, p.k0, p.alpha, p.b1, p.b2) }));
+  const curve_a0 = M.map(m => ({ x: m, y: kFn(m, 0, p.k0, p.alpha, p.b1, p.b2) }));
+
+  // Four treatment condition points
+  const conditionData = [
+    { x: p.mh, y: kVals[0], color: '#f7c948', label: 'C1: Hi+Auto',   radius: 10 },
+    { x: p.ml, y: kVals[1], color: '#4fd1a5', label: 'C2: Lo+Auto',   radius: 10 },
+    { x: p.mh, y: kVals[2], color: '#f06565', label: 'C3: Hi+NoAuto', radius: 10 },
+    { x: p.ml, y: kVals[3], color: '#7b9cef', label: 'C4: Lo+NoAuto', radius: 10 },
+  ];
+
+  const mStarData = [
+    { val: mStar(0, p.b1, p.b2), color: '#f06565', label: 'm*(a=0)' },
+    { val: mStar(1, p.b1, p.b2), color: '#4fd1a5', label: 'm*(a=1)' },
+  ];
+
+  const datasets = [
+    // Shaded area between the two curves (fill)
+    {
+      label: 'a=1  Autonomy given',
+      data: curve_a1,
+      borderColor: '#4fd1a5',
+      backgroundColor: 'rgba(79,209,165,0.08)',
+      borderWidth: 3,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: '+1',   // fill to next dataset (a=0 curve)
+      order: 2,
+    },
+    {
+      label: 'a=0  No autonomy',
+      data: curve_a0,
+      borderColor: '#f06565',
+      backgroundColor: 'transparent',
+      borderWidth: 3,
+      borderDash: [8, 5],
+      pointRadius: 0,
+      tension: 0.3,
+      fill: false,
+      order: 2,
+    },
+    // Four condition dots — one dataset each for individual legend entries
+    ...conditionData.map(c => ({
+      label: c.label,
+      data: [{ x: c.x, y: c.y }],
+      borderColor: c.color,
+      backgroundColor: c.color,
+      pointRadius: c.radius,
+      pointHoverRadius: 13,
+      pointStyle: c.label.includes('NoAuto') ? 'rectRounded' : 'circle',
+      showLine: false,
+      borderWidth: 2.5,
+      order: 1,
+    })),
+  ];
+
+  const allY = [...curve_a1.map(d=>d.y), ...curve_a0.map(d=>d.y)];
+  const yMin = Math.min(...allY) - 0.1;
+  const yMax = Math.max(...allY) + 0.25;
+
+  const config = {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300, easing: 'easeOutQuart' },
+      interaction: { mode: 'nearest', intersect: false },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 0, max: 1,
+          title: {
+            display: true,
+            text: 'Monitoring intensity  m  (probability of being checked)',
+            color: '#9090a8',
+            font: { family: 'DM Mono', size: 11 },
+            padding: { top: 10 }
+          },
+          grid: { color: '#1e2238', lineWidth: 1 },
+          ticks: {
+            color: '#6b7099',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => v.toFixed(1),
+            stepSize: 0.1,
+          },
+          border: { color: '#30304a' }
+        },
+        y: {
+          min: yMin, max: yMax,
+          title: {
+            display: true,
+            text: 'Intrinsic motivation  k(m, a)',
+            color: '#9090a8',
+            font: { family: 'DM Mono', size: 11 },
+            padding: { bottom: 10 }
+          },
+          grid: { color: '#1e2238', lineWidth: 1 },
+          ticks: {
+            color: '#6b7099',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => v.toFixed(2),
+          },
+          border: { color: '#30304a' }
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'start',
+          labels: {
+            color: '#9090a8',
+            font: { family: 'DM Mono', size: 10 },
+            boxWidth: 14, boxHeight: 14,
+            padding: 16,
+            usePointStyle: true,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#1a1e32',
+          borderColor: '#252a45',
+          borderWidth: 1,
+          titleColor: '#f7c948',
+          bodyColor: '#e8eaf6',
+          padding: 10,
+          callbacks: {
+            title: items => {
+              const d = items[0];
+              return d.dataset.label;
+            },
+            label: ctx => [
+              `  m = ${ctx.parsed.x.toFixed(3)}`,
+              `  k = ${ctx.parsed.y.toFixed(4)}`,
+            ]
+          }
+        },
+        dropLines: {}
+      }
+    }
+  };
+
+  if (myChart) {
+    myChart.data.datasets = datasets;
+    myChart.options.scales.y.min = yMin;
+    myChart.options.scales.y.max = yMax;
+    myChart._conditionData = conditionData;
+    myChart._mStarData = mStarData;
+    myChart.update();
+  } else {
+    myChart = new Chart(document.getElementById('mainChart'), config);
+    myChart._conditionData = conditionData;
+    myChart._mStarData = mStarData;
+  }
+}
+
+// ── Wire up sliders ────────────────────────────
+['sl-k0','sl-alpha','sl-b1','sl-b2','sl-mh','sl-ml'].forEach(id => {
+  document.getElementById(id).addEventListener('input', update);
+});
+
+// ── Init ───────────────────────────────────────
+update();
+</script>
+</body>
+</html>
